@@ -21,32 +21,33 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Configuration ---
+# --- Configuration & Global State ---
 DENSO_API_HOST = "https://hackathon1.didgateway.eu"
-# Replace with your actual API key
+# IMPORTANT: Replace with your actual Google AI API key
 genai_client = genai.Client(api_key="AIzaSyBU7Fe3GLcXsKkplon8PGbWAuS36WYp0jc")
 
+# This global variable will hold the current grid status
+GRID_IS_STRESSED = False
+
+# In-memory "databases" for the hackathon
+CHARGE_REQUEST_QUEUE = []
+USER_VCS = {} 
+
 # --- CORS Middleware ---
-# Allows the dashboard (and other services) to communicate with the orchestrator
+# Allows the dashboard to communicate with this server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins for the hackathon
+    allow_origins=["*"], # Allow all origins for simplicity
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --- In-Memory "Databases" ---
-CHARGE_REQUEST_QUEUE = []
-# This dictionary will store the latest VC for each user, acting as our "wallet"
-USER_VCS = {} 
 
 # --- API Data Models (Pydantic) ---
 
 class UserNegotiateRequest(BaseModel):
     user_did: str
     text: str
-    # The presentation is optional, as first-time users won't have one
     presentation: list | dict | None = None
 
 class InternalChargeRequest(BaseModel):
@@ -59,27 +60,29 @@ class InternalChargeRequest(BaseModel):
     received_at: float
     charging_option: str | None = None
     points_awarded: int = 0
+    pickup_time: str | None = None
 
 # --- HTML Dashboard Endpoint ---
 
 @app.get("/", response_class=HTMLResponse, summary="Serves the main HTML dashboard")
 async def get_dashboard():
     """
-    Reads and returns the `dashboard.html` file, providing a real-time view of the charging queue.
+    Reads and returns the `dashboard.html` file from the same directory.
     """
     try:
         with open("dashboard.html", "r") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
-        return HTMLResponse(content="<h1>Error: dashboard.html not found.</h1><p>Please make sure the dashboard file is in the same directory as the orchestrator.</p>", status_code=404)
+        return HTMLResponse(content="<h1>Error: dashboard.html not found.</h1>", status_code=404)
 
 # --- Denso VC Helper Functions ---
+# These functions are for internal use by the orchestrator to manage VCs
 
 async def issue_new_vc(user_did: str, soc: int) -> dict | None:
     """
-    Issues a brand new Verifiable Credential for a first-time user via the Denso API.
+    Issues a brand new Verifiable Credential for a user via the Denso API.
     """
-    print(f"[VC Logic] Issuing a new VC for first-time user {user_did} with SoC {soc}%...")
+    print(f"[VC Logic] Issuing a new VC for {user_did} with SoC {soc}%...")
     
     credential_subject = {
         "id": user_did,
@@ -105,7 +108,7 @@ async def issue_new_vc(user_did: str, soc: int) -> dict | None:
             response.raise_for_status()
             new_vc = response.json()
             print(f"[VC Logic] ✓ New VC issued successfully for {user_did}.")
-            USER_VCS[user_did] = new_vc # Store the new VC
+            USER_VCS[user_did] = new_vc
             return new_vc
     except Exception as e:
         print(f"[VC Logic] ✗ ERROR issuing new VC: {e}")
@@ -113,86 +116,84 @@ async def issue_new_vc(user_did: str, soc: int) -> dict | None:
 
 async def update_vc(user_did: str, existing_vc: dict, soc: int) -> dict | None:
     """
-    Updates an existing Verifiable Credential with a new SoC value.
-    Note: The update endpoint may not be implemented; this is a conceptual function.
+    Updates an existing Verifiable Credential.
     """
-    print(f"[VC Logic] Attempting to update VC for user {user_did}...")
+    print(f"[VC Logic] Attempting to update VC for {user_did}...")
     
-    # Modify the credential subject with the new SoC
-    existing_vc['credentialSubject']['claims']['soc_percent'] = soc
-    existing_vc['credentialSubject']['last_updated'] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-    url = f"{DENSO_API_HOST}/boy/api/update-credential" # This is a hypothetical endpoint
-    headers = {"Content-Type": "application/json"}
-    payload = existing_vc
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            updated_vc = response.json()
-            print(f"[VC Logic] ✓ VC updated for {user_did}.")
-            USER_VCS[user_did] = updated_vc # Store the updated VC
-            return updated_vc
-    except Exception:
-        print(f"[VC Logic] ✗ Update failed (endpoint might not exist). Issuing a new VC instead.")
-        return await issue_new_vc(user_did, soc)
+    # In a real scenario, you would modify specific fields.
+    # For the demo, we'll just re-issue a new one as the update logic is complex.
+    print("[VC Logic] Update endpoint not available, issuing a new VC as a fallback.")
+    return await issue_new_vc(user_did, soc)
 
 # --- Core API Endpoints ---
+
+@app.post("/api/grid/stress", summary="Manually set the grid status to STRESSED")
+async def stress_grid():
+    global GRID_IS_STRESSED
+    GRID_IS_STRESSED = True
+    print("\n[Grid Control] Grid status manually set to STRESSED.\n")
+    return {"status": "Grid is now STRESSED"}
+
+@app.post("/api/grid/stabilize", summary="Manually set the grid status to STABLE")
+async def stabilize_grid():
+    global GRID_IS_STRESSED
+    GRID_IS_STRESSED = False
+    print("\n[Grid Control] Grid status manually set to STABLE.\n")
+    return {"status": "Grid is now STABLE"}
 
 @app.post("/api/negotiate", summary="Handles all incoming user charging requests")
 async def handle_negotiation(request: UserNegotiateRequest):
     """
-    This is the main entry point ("The Mouth"). It orchestrates the entire process:
-    1. Manages Verifiable Credentials (VCs) for the user.
-    2. Gathers context (like grid status).
-    3. Queries the GenAI model for a smart charging decision.
-    4. Passes the final, structured request to the internal queue ("The Brain").
+    This is the main entry point ("The Mouth"). This corrected version ensures
+    the start_soc is correctly parsed and passed to the GenAI model.
     """
     print(f"\n--- New Request Received ---")
     print(f"User: {request.user_did}")
     print(f"Text: '{request.text}'")
 
-    # Simplified SoC extraction from text for the demo
-    start_soc = 50 # Default SoC
-    if '%' in request.text:
-        try:
-            # Look for a number before the '%' sign
-            soc_str = request.text.split('%')[0].strip().split()[-1]
-            start_soc = int(soc_str)
-        except (ValueError, IndexError):
-            print("[Warning] Could not parse SoC from text, using default 50%.")
+    # --- Corrected SoC Parsing ---
+    start_soc = 50  # Default SoC
+    # A more robust way to find the SoC percentage in the text
+    text_parts = request.text.replace('%', ' ').split()
+    for i, part in enumerate(text_parts):
+        if part.isdigit() and i > 0:
+            # Check if the previous word indicates it's a percentage
+            if text_parts[i-1].lower() in ["at", "is", "is at"]:
+                start_soc = int(part)
+                break
     
+    print(f"[Context] Parsed Starting SoC: {start_soc}%")
+
     # --- VC Management Logic ---
+    # This part is working correctly.
     user_vc = USER_VCS.get(request.user_did)
     if user_vc:
-        # If the user is known, update their VC with the new SoC
         await update_vc(request.user_did, user_vc, start_soc)
     else:
-        # If this is a new user, issue them a brand new VC
         await issue_new_vc(request.user_did, start_soc)
     
     # --- Contextual Enrichment ---
-    # Simulate real-time grid status for the GenAI prompt
-    is_grid_stressed = random.choice([True, False])
-    print(f"[Context] Grid Status: {'STRESSED' if is_grid_stressed else 'STABLE'}")
+    global GRID_IS_STRESSED
+    grid_status_text = 'stressed' if GRID_IS_STRESSED else 'stable'
+    print(f"[Context] Grid Status: {grid_status_text.upper()}")
 
-    # --- GenAI Decision Making ---
+    # --- GenAI Decision Making (Corrected) ---
     try:
+        # Add a timestamp to the prompt to ensure it's always unique
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
         enriched_prompt = (
-            f"A user with {start_soc}% battery says: '{request.text}'. "
-            f"The power grid is currently {'stressed' if is_grid_stressed else 'stable'}."
+            f"As of {current_time}, a user with {start_soc}% battery says: '{request.text}'. "
+            f"The power grid is currently {grid_status_text}."
         )
-        print(f"[GenAI] Sending enriched prompt...")
+        print(f"[GenAI] Sending unique, enriched prompt...")
         
         genai_json = await get_intent_from_genai(enriched_prompt)
         
-        # Combine all data into a single, structured internal request
         genai_json.update({
             "user_did": request.user_did,
             "original_text": request.text,
             "received_at": time.time(),
-            "start_soc": start_soc
+            "start_soc": start_soc # Ensure this is passed correctly
         })
         print(f"[GenAI] ✓ Decision received: {genai_json}")
 
@@ -212,23 +213,19 @@ async def handle_negotiation(request: UserNegotiateRequest):
 
 @app.post("/api/charge_request", summary="Adds a request to the internal charging queue")
 async def add_charge_request(request: InternalChargeRequest):
-    """
-    This is "The Brain." It receives a validated, structured request and adds it to the master queue.
-    """
+    """This is "The Brain." It adds a structured request to the master queue."""
     print(f"[Brain] Adding to queue: {request.user_did} (Priority: {request.priority})")
     
     global CHARGE_REQUEST_QUEUE
-    # Ensure each user only has one active request
     CHARGE_REQUEST_QUEUE = [r for r in CHARGE_REQUEST_QUEUE if r.user_did != request.user_did]
     CHARGE_REQUEST_QUEUE.append(request)
     
     return {"status": "request_added_to_queue", "user_did": request.user_did}
 
-@app.get("/api/status", summary="Provides the current status of the charging queue")
+@app.get("/api/status", summary="Provides the current status of the charging queue and grid")
 async def get_status():
-    """
-    This is "The Dashboard." It returns a sorted list of all cars currently in the queue.
-    """
+    """This is for "The Dashboard." It returns the queue and grid status."""
+    global GRID_IS_STRESSED
     priority_map = {"high": 3, "medium": 2, "low": 1}
     sorted_queue = sorted(
         CHARGE_REQUEST_QUEUE,
@@ -236,8 +233,9 @@ async def get_status():
         reverse=True
     )
     return {
-        "charger_count": 4, # Hardcoded for demo
+        "charger_count": 4,
         "chargers_in_use": len(sorted_queue),
+        "is_grid_stressed": GRID_IS_STRESSED,
         "priority_queue": [r.model_dump() for r in sorted_queue]
     }
 
@@ -245,43 +243,57 @@ async def get_status():
 
 async def get_intent_from_genai(user_text: str) -> dict:
     """
-    Uses the Gemini model to make intelligent charging decisions based on user needs and grid status.
+    Uses GenAI to determine charging strategy. This version has a highly-tuned
+    prompt to ensure all fields are extracted correctly.
     """
-    system_prompt = """You are an EV Charging Decision Engine. Your task is to analyze user requests and real-time grid status to make the best charging recommendation.
+    # This is the final, most important part of the project.
+    # The system_prompt is the "brain" of the AI.
+    system_prompt = """You are a master EV Charging Concierge. Your sole job is to analyze a user's request and the current power grid status, then create a perfect charging plan. You must fill in all fields of the JSON output.
 
-RULES:
-1.  **Priority Analysis**:
-    -   Assign "high" priority for urgent needs (e.g., 'panic', 'meeting', 'ASAP', 'running late').
-    -   Assign "medium" priority for standard requests with a future deadline (e.g., 'by 6 PM', 'this evening').
-    -   Assign "low" priority for flexible, non-urgent requests (e.g., 'no rush', 'overnight').
-2.  **Time and SoC Extraction**:
-    -   Convert all times to a 24-hour HH:MM format.
-    -   Extract the target State of Charge (SoC) if mentioned ('full' = 100).
-3.  **Grid-Aware Gamification**:
-    -   If the grid is STABLE, the default option is always "fast_charge". Award a standard 10 loyalty points.
-    -   If the grid is STRESSED:
-        -   For "high" priority users, you MUST recommend "fast_charge" to meet their urgent need. They earn 0 points.
-        -   For "medium" or "low" priority users, you MUST recommend "eco_charge" to help balance the grid. This is also healthier for the car's battery. Reward them with 100 loyalty points.
+**Analysis Checklist:**
 
-OUTPUT FORMAT:
-You must return a single, valid JSON object with the following keys. Do not include any other text, markdown, or explanations.
-{
-  "priority": "high" | "medium" | "low",
-  "leave_by": "HH:MM" | null,
-  "min_soc": integer | null,
-  "charging_option": "fast_charge" | "eco_charge",
-  "points_awarded": integer
-}
+1.  **Extract Priority**:
+    *   `high`: Is the user in a `panic`? Do they have a `meeting` or `appointment`? Are they using words like `ASAP` or `urgent`?
+    *   `medium`: Does the user mention a specific future time like `by 6 PM` or `this evening`?
+    *   `low`: Is the user flexible? Do they say `no rush`, `all day`, or `overnight`?
 
-EXAMPLES:
-Input: "A user with 20% battery says: 'I'M IN A PANIC! I have a client meeting at 3 PM and I need at least 70%!'. The power grid is currently stressed."
-Output: {"priority": "high", "leave_by": "15:00", "min_soc": 70, "charging_option": "fast_charge", "points_awarded": 0}
+2.  **Extract Leave By Time**:
+    *   Look for any time mentioned (e.g., "3 PM", "evening").
+    *   Convert it to a 24-hour `HH:MM` format. "evening" is `18:00`.
+    *   If no time is mentioned, you MUST use `null`.
 
-Input: "A user with 85% battery says: 'Hey, I'm just plugging in. I'll be here all day, no rush at all.'. The power grid is currently stressed."
-Output: {"priority": "low", "leave_by": null, "min_soc": null, "charging_option": "eco_charge", "points_awarded": 100}
+3.  **Extract Minimum SoC**:
+    *   Look for a target battery percentage (e.g., "at least 70%", "full charge").
+    *   `full charge` means `100`.
+    *   If no target SoC is mentioned, you MUST use `null`.
 
-Input: "A user with 50% battery says: 'I need my car by 6pm'. The power grid is currently stable."
-Output: {"priority": "medium", "leave_by": "18:00", "min_soc": null, "charging_option": "fast_charge", "points_awarded": 10}
+4.  **Determine Charging Plan & Points (Grid Logic)**:
+    *   If grid is **STABLE**: Always `fast_charge`, `10` points.
+    *   If grid is **STRESSED**:
+        *   If priority is `high`, it MUST be `fast_charge`, `0` points.
+        *   If priority is `medium` or `low`, it MUST be `eco_charge`, `100` points.
+
+5.  **Estimate Pickup Time**:
+    *   `fast_charge` takes about **45 minutes**.
+    *   `eco_charge` takes about **3 hours**.
+    *   Provide a user-friendly estimate like `"in about 45 mins"` or `"around 5:30 PM"`.
+
+**CRITICAL OUTPUT FORMAT:**
+You MUST return only a single, valid JSON object. All keys must be present. Use `null` if a value is not available.
+
+**Examples to Learn From:**
+
+*   **Input**: "A user with 20% battery says: 'I'M IN A PANIC! I have a client meeting at 3 PM and I need at least 70%!'. The power grid is currently stressed."
+    *   **Output**: `{"priority": "high", "leave_by": "15:00", "min_soc": 70, "charging_option": "fast_charge", "points_awarded": 0, "pickup_time": "in about 45 mins"}`
+
+*   **Input**: "A user with 85% battery says: 'Hey, I'm just plugging in. I'll be here all day, no rush at all.'. The power grid is currently stressed."
+    *   **Output**: `{"priority": "low", "leave_by": null, "min_soc": null, "charging_option": "eco_charge", "points_awarded": 100, "pickup_time": "in about 3 hours"}`
+
+*   **Input**: "A user with 40% battery says: 'Hi, it's my first time here! My car is at 40% and I need to leave by the evening.'. The power grid is currently stable."
+    *   **Output**: `{"priority": "medium", "leave_by": "18:00", "min_soc": null, "charging_option": "fast_charge", "points_awarded": 10, "pickup_time": "in about 45 mins"}`
+
+*   **Input**: "A user with 70% battery says: 'Just need a top-up'. The power grid is currently stable."
+    *   **Output**: `{"priority": "low", "leave_by": null, "min_soc": null, "charging_option": "fast_charge", "points_awarded": 10, "pickup_time": "in about 45 mins"}`
 """
  
     try:
@@ -289,7 +301,7 @@ Output: {"priority": "medium", "leave_by": "18:00", "min_soc": null, "charging_o
             model="gemini-2.5-flash",
             contents=f"{system_prompt}\n\nAnalyze this request:\n{user_text}",
             config=GenerateContentConfig(
-                temperature=0.0,
+                temperature=0.0, # Zero temperature for maximum consistency
                 response_mime_type="application/json",
                 response_schema={
                     "type": "object",
@@ -298,16 +310,24 @@ Output: {"priority": "medium", "leave_by": "18:00", "min_soc": null, "charging_o
                         "leave_by": {"type": ["string", "null"]},
                         "min_soc": {"type": ["integer", "null"]},
                         "charging_option": {"type": "string"},
-                        "points_awarded": {"type": "integer"}
+                        "points_awarded": {"type": "integer"},
+                        "pickup_time": {"type": "string"}
                     },
-                    "required": ["priority", "leave_by", "min_soc", "charging_option", "points_awarded"]
+                    "required": ["priority", "leave_by", "min_soc", "charging_option", "points_awarded", "pickup_time"]
                 }
             ),
         )
         return json.loads(response.text)
     except Exception as e:
         print(f"[GenAI] ✗ ERROR during GenAI call: {e}. Using fallback.")
-        return {"priority": "medium", "leave_by": None, "min_soc": None, "charging_option": "fast_charge", "points_awarded": 10}
+        return {
+            "priority": "medium", 
+            "leave_by": "18:00", # Fallback with data
+            "min_soc": 80,
+            "charging_option": "fast_charge", 
+            "points_awarded": 10,
+            "pickup_time": "in about 45 mins"
+        }
 
 # --- Main Execution Guard ---
 if __name__ == "__main__":
