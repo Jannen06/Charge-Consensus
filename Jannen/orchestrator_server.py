@@ -215,83 +215,63 @@ async def get_intent_from_genai(user_text: str) -> dict:
     """
     Uses Google GenAI SDK with structured JSON output for reliable parsing.
     """
-    system_prompt = """You are an EV charging priority classifier. Extract structured data from user requests.
+    # Simplified, more direct prompt
+    system_prompt = """Extract charging priority information from user requests.
 
-PRIORITY CLASSIFICATION:
-HIGH - Urgent situations requiring immediate attention:
-  • Keywords: panic, urgent, emergency, ASAP, hurry, rush, crucial, critical
-  • Events: meeting, appointment, client, interview, flight, deadline
-  • Time pressure: "need to leave soon", "running late", "in 30 minutes"
-  • Emphasis: ALL CAPS, multiple exclamation marks!!!
+PRIORITY RULES:
+- "high": panic, urgent, emergency, ASAP, meeting, appointment, running late
+- "medium": specific time mentioned (e.g., "by 5 PM"), moderate urgency  
+- "low": no rush, all day, overnight, flexible, leisurely
 
-MEDIUM - Standard requests with time constraints:
-  • Specific future times: "by 5 PM", "need it this evening", "before dinner"
-  • Moderate urgency: "would like to", "hoping to get", "need it by"
-  • Planning ahead: "have plans later", "going out tonight"
+TIME FORMAT (24-hour HH:MM):
+- "3 PM" → "15:00"
+- "5:30 PM" → "17:30"
+- "noon" → "12:00"
+- "evening" → "18:00"
+- "morning" → "08:00"
 
-LOW - Flexible, non-urgent charging:
-  • Keywords: no rush, no hurry, whenever, flexible, leisurely
-  • Extended time: "all day", "all night", "here until tomorrow", "overnight"
-  • Casual tone: "just topping up", "might as well", "while I'm here"
+SOC (State of Charge):
+- Extract any percentage mentioned: "70%" → 70, "at least 80" → 80
+- "full charge" → 100
+- "half" → 50
 
-TIME EXTRACTION (24-hour format):
-  • "3 PM" / "3:00 PM" → "15:00"
-  • "noon" / "12 PM" → "12:00"
-  • "evening" → "18:00"
-  • "morning" → "08:00"
-  • "midnight" → "00:00"
-  • No time mentioned → null
+IMPORTANT: Extract ALL mentioned values. If a time like "3 PM" is mentioned, you MUST extract it as "15:00". If a percentage like "70%" is mentioned, you MUST extract it as 70.
 
-STATE OF CHARGE (SOC) EXTRACTION:
-  • "70%" / "70 percent" / "at least 70" → 70
-  • "full charge" / "100%" / "fully charged" → 100
-  • "80" / "eighty percent" → 80
-  • "half" / "50%" → 50
-  • No target mentioned → null
-
-CONTEXT AWARENESS:
-  • If current SoC is very low (<25%) and user says "full charge", treat as HIGH priority
-  • If current SoC is high (>75%) and no urgency mentioned, default to LOW
-  • Time + low battery = HIGH priority automatically
-
-EXAMPLES:
-Input: "User is at 85% SoC. User says: 'Just plugging in, here all day, no rush'"
-Output: {"priority": "low", "leave_by": null, "min_soc": null}
-
-Input: "User is at 20% SoC. User says: 'URGENT! Client meeting at 3 PM and I need at least 70%!'"
-Output: {"priority": "high", "leave_by": "15:00", "min_soc": 70}
-
-Input: "User is at 45% SoC. User says: 'Need it by evening, around 80% would be good'"
-Output: {"priority": "medium", "leave_by": "18:00", "min_soc": 80}
-
-Input: "User is at 15% SoC. User says: 'Need a full charge for my road trip'"
-Output: {"priority": "high", "leave_by": null, "min_soc": 100}"""
+Return JSON with exactly these fields:
+{
+  "priority": "high|medium|low",
+  "leave_by": "HH:MM or null",
+  "min_soc": number or null
+}"""
  
     try:
-        # Use structured output with JSON schema for reliable parsing
+        # Use structured output with proper schema definition
         response = await genai_client.aio.models.generate_content(
             model="gemini-2.5-flash",
-            contents=f"{system_prompt}\n\nNow analyze:\n{user_text}",
+            contents=f"{system_prompt}\n\nAnalyze this request:\n{user_text}\n\nReturn JSON with priority, leave_by (time in HH:MM format if mentioned), and min_soc (number if mentioned).",
             config=GenerateContentConfig(
-                temperature=0.1,
+                temperature=0.0,  # Use 0 for more deterministic output
                 response_mime_type="application/json",
                 response_schema={
                     "type": "object",
                     "properties": {
                         "priority": {
                             "type": "string",
-                            "enum": ["low", "medium", "high"]
+                            "enum": ["low", "medium", "high"],
+                            "description": "Urgency level of the request"
                         },
                         "leave_by": {
-                            "type": ["string", "null"],
-                            "description": "Time in 24-hour format (HH:MM) or null"
+                            "type": "string",
+                            "nullable": True,
+                            "description": "Time user needs to leave in 24-hour HH:MM format, or null if not mentioned"
                         },
                         "min_soc": {
-                            "type": ["integer", "null"],
-                            "description": "Minimum state of charge percentage or null"
+                            "type": "integer",
+                            "nullable": True,
+                            "description": "Minimum battery percentage needed, or null if not mentioned"
                         }
                     },
-                    "required": ["priority"]
+                    "required": ["priority", "leave_by", "min_soc"]  # Make all required
                 }
             ),
         )
@@ -302,15 +282,23 @@ Output: {"priority": "high", "leave_by": null, "min_soc": 100}"""
         # Parse the JSON response
         parsed = json.loads(text)
         
-        # Validate and clean the response
+        # Validate priority
         priority = parsed.get("priority", "medium").lower()
         if priority not in ["low", "medium", "high"]:
             priority = "medium"
         
+        # Handle leave_by - convert empty string to None
+        leave_by = parsed.get("leave_by")
+        if leave_by == "":
+            leave_by = None
+            
+        # Handle min_soc
+        min_soc = parsed.get("min_soc")
+        
         return {
             "priority": priority,
-            "leave_by": parsed.get("leave_by"),
-            "min_soc": parsed.get("min_soc")
+            "leave_by": leave_by,
+            "min_soc": min_soc
         }
         
     except Exception as e:
@@ -325,10 +313,10 @@ Output: {"priority": "high", "leave_by": null, "min_soc": 100}"""
         elif any(word in text_lower for word in ["no rush", "all day", "tomorrow"]):
             return {"priority": "low", "leave_by": None, "min_soc": None}
         return {"priority": "medium", "leave_by": None, "min_soc": None}
-    
 
 
-    
+
+
 if __name__ == "__main__":
     print("Starting ChargeFlex AI Orchestrator on http://0.0.0.0:8001")
     print("View dashboard at http://127.0.0.1:8001")
