@@ -170,25 +170,34 @@ async def get_intent_from_genai(user_text: str) -> dict:
     now = datetime.now()
     current_time_str = now.strftime("%H:%M")
 
-    system_prompt = f"""You are a master EV Charging Concierge. Your sole job is to analyze a user's request, the power grid status, and the current time ({current_time_str}) to create a perfect charging plan. You must fill in all fields of the JSON output.
+    system_prompt = f"""You are a master EV Charging Concierge. Your sole job is to analyze a user's request, including their starting battery SoC (State of Charge), the power grid status, and the current time ({current_time_str}) to create an optimal, grid-friendly charging plan. Always prioritize grid stability while meeting user needs as closely as possible. Output must be deterministic and logical.
 
-**Analysis Checklist:**
+**Key Assumptions**:
+- Starting SoC is provided in the request (e.g., 40%). If not parsable, default to 50%.
+- Charging rates: fast_charge adds ~1% SoC per minute (max 45 min session). eco_charge adds ~0.3% SoC per minute (max 3 hours session).
+- If min_soc not reached in time, cap at what's possible and award 0 points.
+- Handle time formats flexibly: 24-hour (15:00), 12-hour (3pm/3 pm), relative (in 2 hours = add to current time), or vague (soon = high priority, +30 min).
+- If leave_by conflicts with pickup (e.g., too soon), force fast_charge and adjust.
+- Default min_soc: 80% if not specified. Default leave_by: current time +3 hours if flexible/low priority.
+- Grid status overrides: If stressed, encourage eco for medium/low; allow fast for high but with 0 points.
 
-1.  **Extract Priority**: `high` (urgent), `medium` (deadline), `low` (flexible).
-2.  **Extract Leave By Time**: Convert time to `HH:MM`. Use `null` if not mentioned.
-3.  **Extract Minimum SoC**: Extract target %. `full` is `100`. Use `null` if not mentioned.
-4.  **Grid-Aware Gamification**:
-    *   If grid is **STABLE**: `fast_charge`, `10` points.
-    *   If grid is **STRESSED**: `high` priority -> `fast_charge` (0 pts); `medium`/`low` -> `eco_charge` (100 pts).
-5.  **Calculate Pickup Time**:
-    *   The current time is **{current_time_str}**.
-    *   `fast_charge` takes **45 minutes**.
-    *   `eco_charge` takes **3 hours**.
-    *   Calculate the final time and return it in `HH:MM` format. For example, if it is 14:00 and charging takes 45 minutes, the pickup time is 14:45.
-    *   The pickup time must be before the user's `leave_by` time.
+**Analysis Steps (Follow Strictly)**:
+1. **Extract Priority**: Based on urgency words (e.g., 'urgent/emergency' = high; 'by [time]' = medium; 'whenever/no rush' = low). Default: medium.
+2. **Extract Leave By Time**: Parse to HH:MM (24-hour). Convert relatives/AM/PM. If none, infer from priority (high: +45 min; medium: +2 hours; low: +3 hours). Use null only if truly impossible to infer.
+3. **Extract Minimum SoC**: Parse target % (e.g., '70%' = 70, 'full' = 100). If range, take minimum. Default: 80 if none.
+4. **Determine Charging Option and Points (Grid-Aware Gamification)**:
+   - If grid STABLE: Always fast_charge, award 10 points base + 20 if flexible (low priority).
+   - If grid STRESSED: high priority = fast_charge (0 points); medium = eco_charge (50 points); low = eco_charge (100 points + 50 bonus if delaying >1 hour).
+   - Adjust if min_soc/start_soc delta requires more time: e.g., if >50% needed, prefer eco for grid health unless high priority.
+   - For conflicts (e.g., time/SoC impossible), set points to 0.
+5. **Calculate Pickup Time**:
+   - Compute required time: (min_soc - start_soc) / rate (fast=1%/min, eco=0.3%/min). Cap at max session.
+   - Add to current time: Format as HH:MM (24-hour). If over 24:00, wrap to next day but note.
+   - Ensure pickup <= leave_by: If not, switch to fast_charge, reduce min_soc if needed, and set points to 0.
+   - If no charging needed (start_soc >= min_soc), set pickup to current time +5 min, option='none', points=0.
 
-**CRITICAL OUTPUT FORMAT:**
-Return only a single, valid JSON object. All keys must be present. Use `null` if a value is not available.
+**CRITICAL OUTPUT FORMAT**:
+Return ONLY a single, valid JSON object. All required keys must be present. Use null sparingly—prefer defaults/inferences. Add an optional 'reasoning' string for brief explanation (e.g., "Switched to fast due to time conflict").
 """
  
     try:
