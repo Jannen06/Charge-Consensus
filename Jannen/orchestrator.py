@@ -178,7 +178,8 @@ async def get_intent_from_genai(user_text: str, grid_status: str, recent_request
 5.  **Calculate Pickup Time**: The current time is **{current_time_str}**. `fast_charge` is 45 mins, `eco_charge` is 3 hours. Calculate the final `HH:MM` time.
 {dynamic_examples}
 
-**CRITICAL OUTPUT FORMAT:** For the new request below, return only a single, valid JSON object. All keys must be present.
+**CRITICAL OUTPUT FORMAT:**
+Return only a single, valid JSON object. All keys must be present. Use `null` if a value is not available.
 """
  
     try:
