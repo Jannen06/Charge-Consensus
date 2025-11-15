@@ -5,7 +5,7 @@ import time
 import json
 
 # --- Configuration ---
-ORCHESTRATOR_URL = "http://127.0.0.1:8001" # CHANGED
+ORCHESTRATOR_URL = "http://127.0.0.1:8001" # Using port 8001
 DENSO_API_HOST = "https://hackathon.dndappsdev.net"
 
 # --- Denso API Simulation Functions ---
@@ -51,7 +51,6 @@ async def issue_vehicle_soc_vc(vehicle_did: str, soc: int) -> dict:
 
 
 async def create_presentation(user_did: str, vehicle_vc: dict) -> dict:
-    # act as a driver
     """
     Simulates a Driver calling /api/request-presentation.
     This "bundles" the driver's ID and the car's VC to "share" them.
@@ -81,7 +80,6 @@ async def create_presentation(user_did: str, vehicle_vc: dict) -> dict:
         "type": ["VerifiablePresentation"],
         "holder": user_did,
         "verifiableCredential": [vehicle_vc] # Embed the VC
-        # In a real flow, this would also include the Driver's "Employee" VC
     }
     print("  [Denso Sim] Fake Presentation Created.")
     return fake_presentation
@@ -98,16 +96,15 @@ async def send_charge_request(did: str, text: str, presentation: dict):
     payload = {
         "user_did": did,
         "text": text,
-        "presentation": presentation # NEW: Send the whole presentation
+        "presentation": presentation # Send the whole presentation
     }
     
     print(f"\n--- Simulating Driver: {did.split(':')[2]} ---")
     print(f"Sending text: '{text}'")
-
-    # --- THIS IS THE NEW DEBUG LINE ---
-    print(f"\n[Debug] Sending this JSON payload to {url}:")
-    print(json.dumps(payload, indent=2))
-    # --- END OF NEW DEBUG LINE ---
+    
+    # Debug line to show what's being sent
+    print(f"\n[Debug] Sending payload to {url}")
+    # print(json.dumps(payload, indent=2)) # You can un-comment this if you need to see the full JSON
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -115,6 +112,10 @@ async def send_charge_request(did: str, text: str, presentation: dict):
             response.raise_for_status()
             print("[Driver Sim] Orchestrator Response:", response.json())
             
+    except httpx.HTTPStatusError as e:
+        print(f"\n!!! HTTPStatusError: {e.response.status_code} {e.response.reason_phrase}")
+        print("Server Response:", e.response.text)
+        
     except httpx.RequestError as e:
         print(f"\n!!! ERROR: Could not connect to orchestrator.")
         print(f"Did you start the server? `python {sys.argv[0]}`")
@@ -128,19 +129,16 @@ async def main():
     # --- Driver 1: Tom (Low priority) ---
     print("--- DEMO START: TOM (LOW PRIORITY) ---")
     
-    # 1. Simulate his vehicle issuing a VC
     tom_vehicle_vc = await issue_vehicle_soc_vc(
         vehicle_did="did:denso:vehicle:tom:123", 
         soc=85
     )
     
-    # 2. Simulate Tom bundling his VCs
     tom_presentation = await create_presentation(
         user_did="did:denso:user:tom:12345",
         vehicle_vc=tom_vehicle_vc
     )
     
-    # 3. Tom talks to the orchestrator
     await send_charge_request(
         did="did:denso:user:tom:12345",
         text="Hey, I'm just plugging in. I'll be here all day, no rush at all.",
@@ -152,19 +150,16 @@ async def main():
     # --- Driver 2: Sarah (High priority) ---
     print("--- DEMO START: SARAH (HIGH PRIORITY) ---")
     
-    # 1. Simulate her vehicle issuing a VC
     sarah_vehicle_vc = await issue_vehicle_soc_vc(
         vehicle_did="did:denso:vehicle:sarah:456", 
         soc=20 # She has low battery!
     )
     
-    # 2. Simulate Sarah bundling her VCs
     sarah_presentation = await create_presentation(
         user_did="did:denso:user:sarah:67890",
         vehicle_vc=sarah_vehicle_vc
     )
     
-    # 3. Sarah talks to the orchestrator
     await send_charge_request(
         did="did:denso:user:sarah:67890",
         text="I'M IN A PANIC! I have a client meeting at 3 PM and I need at least 70%!",

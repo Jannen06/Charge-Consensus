@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
-from starlette.responses import HTMLResponse # UPDATED: Import from starlette
+from starlette.responses import HTMLResponse
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware # NEW: Import CORS
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import httpx
 from pydantic import BaseModel
@@ -9,30 +9,33 @@ import time
 import json 
 import asyncio 
 
-# --- Configuration ---
+from google import genai
+from google.genai.types import GenerateContentConfig
+from google import genai
+from google.genai.types import GenerateContentConfig, Schema
+import json
 
 app = FastAPI()
 
-# --- NEW: Add CORS Middleware ---
-# This tells the browser it's safe for our dashboard (even on a different URL)
-# to request data from this server. This prevents "CORS errors".
+# Initialize the client at the top of your file (with other initializations)
+genai_client = genai.Client(api_key="AIzaSyBU7Fe3GLcXsKkplon8PGbWAuS36WYp0jc")
+
+# Add CORS middleware to allow your dashboard to connect
 origins = [
     "http://127.0.0.1:8001",
     "http://localhost:8001",
-    "http://127.0.0.1:8000", # In case you switch back
+    "http://127.0.0.1:8000",
     "http://localhost:8000",
-    "null", # Allows 'file://' origins for local testing
+    "null", # For file:// origins
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-# --- End of NEW section ---
-
 
 DENSO_API_HOST = "https://hackathon.dndappsdev.net"
 
@@ -71,12 +74,11 @@ async def verify_denso_presentation(presentation: dict) -> dict:
     Simulates calling the Denso Gateway to verify a Verifiable Presentation.
     """
     print(f"[Verify] Verifying presentation with Denso Gateway...")
-    # --- REAL API CALL (when you have a token) ---
-    # ... (real call logic) ...
     
     # --- SIMULATED SUCCESS ---
     soc = None
     try:
+        # This simulates parsing the VC *after* it's been verified
         for vc in presentation.get("verifiableCredential", []):
             subject = vc.get("credentialSubject", {})
             if subject.get("type") == "VehicleSoC":
@@ -92,7 +94,6 @@ async def verify_denso_presentation(presentation: dict) -> dict:
 
     print(f"[Verify] Presentation VERIFIED. Extracted SoC: {soc}%")
     return {"verified": True, "soc": soc}
-
 
 # --- The "Mouth": GenAI NLP Endpoint (UPDATED) ---
 
@@ -121,6 +122,7 @@ async def handle_negotiation(request: UserNegotiateRequest):
         
         genai_json = await get_intent_from_genai(enriched_prompt)
         
+        # Add all metadata for the internal request
         genai_json["user_did"] = request.user_did
         genai_json["original_text"] = request.text
         genai_json["received_at"] = time.time()
@@ -130,13 +132,15 @@ async def handle_negotiation(request: UserNegotiateRequest):
 
     except Exception as e:
         print(f"[Negotiate] ERROR calling GenAI: {e}")
-        raise HTTPException(status_code=500, detail="GenAI call failed")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"GenAI call failed: {e}")
 
     # 3. Forward this structured request to our "Brain"
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://127.0.0.1:8001/api/charge_request", # Using port 8001
+                "http://127.0.0.1:8001/api/charge_request",
                 json=genai_json,
                 timeout=10.0
             )
@@ -146,7 +150,6 @@ async def handle_negotiation(request: UserNegotiateRequest):
         raise HTTPException(status_code=500, detail="Failed to forward request to brain")
 
     return {"status": "request_received_and_processing", "intent": genai_json}
-
 
 # --- The "Brain": Internal Scheduler Endpoint ---
 
@@ -159,11 +162,29 @@ async def add_charge_request(request: InternalChargeRequest):
     print(f"[Brain] Adding to queue: {request.user_did} (Priority: {request.priority})")
     
     global CHARGE_REQUEST_QUEUE
+    # Remove any old request from this user
     CHARGE_REQUEST_QUEUE = [r for r in CHARGE_REQUEST_QUEUE if r.user_did != request.user_did]
+    # Add the new request
     CHARGE_REQUEST_QUEUE.append(request)
     
     return {"status": "request_added_to_queue", "user_did": request.user_did}
 
+# --- The "Gamification": Nudge Endpoint ---
+
+@app.post("/api/nudge/{user_did}")
+async def nudge_user(user_did: str):
+    """
+    This is the "Gamification" feature.
+    An admin clicks a button on the dashboard to "nudge" a user.
+    """
+    print(f"[Nudge] Admin sent a nudge to {user_did}")
+    
+    # For the demo, we just log it and remove them from the queue
+    global CHARGE_REQUEST_QUEUE
+    CHARGE_REQUEST_QUEUE = [r for r in CHARGE_REQUEST_QUEUE if r.user_did != user_did]
+    
+    print(f"[Nudge] {user_did} has been removed from the queue.")
+    return {"status": "nudge_sent", "user_did": user_did, "points_awarded": 50}
 
 # --- The "Dashboard": Status Endpoint ---
 
@@ -181,7 +202,7 @@ async def get_status():
         reverse=True
     )
     
-    queue_as_dicts = [r.model_dump() for r in sorted_queue] # Use .model_dump()
+    queue_as_dicts = [r.model_dump() for r in sorted_queue]
     
     return {
         "charger_count": 4,
@@ -189,80 +210,126 @@ async def get_status():
         "priority_queue": queue_as_dicts
     }
 
-
 # --- Gemini API Helper Function ---
-
 async def get_intent_from_genai(user_text: str) -> dict:
     """
-    Calls the Gemini API to classify the user's intent.
+    Uses Google GenAI SDK with structured JSON output for reliable parsing.
     """
-    apiKey = "" # Canvas provides this
-    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={apiKey}"
+    system_prompt = """You are an EV charging priority classifier. Extract structured data from user requests.
 
-    system_prompt = """
-    You are an EV charging assistant. Your ONLY job is to convert a user's text into a valid JSON object.
-    You MUST output ONLY the JSON, with no other text.
-    
-    The JSON must have 3 keys:
-    1. "priority": (string) Must be one of: "low", "medium", or "high".
-    2. "leave_by": (string or null) The time the user needs to leave in "HH:MM" 24-hour format, or null if not specified.
-    3. "min_soc": (integer or null) The minimum State of Charge (e.g., 70), or null if not specified.
+PRIORITY CLASSIFICATION:
+HIGH - Urgent situations requiring immediate attention:
+  • Keywords: panic, urgent, emergency, ASAP, hurry, rush, crucial, critical
+  • Events: meeting, appointment, client, interview, flight, deadline
+  • Time pressure: "need to leave soon", "running late", "in 30 minutes"
+  • Emphasis: ALL CAPS, multiple exclamation marks!!!
 
-    High priority examples: "in a hurry", "urgent", "client meeting", "need to leave soon", "panic".
-    Medium priority examples: "need it by this evening", "sometime after 5".
-    Low priority examples: "no rush", "here all day", "just a top-up", "leaving tomorrow".
-    
-    The user's text may include their current SoC. Use this to inform the "min_soc" if they are vague.
-    For example: "User is at 20% SoC. User says: 'I need at least 70%'" -> "min_soc": 70
-    For example: "User is at 20% SoC. User says: 'I need a full charge'" -> "min_soc": 100
-    """
-    
-    payload = {
-        "systemInstruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"parts": [{"text": user_text}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": {
-                "type": "OBJECT",
-                "properties": {
-                    "priority": {"type": "STRING"},
-                    "leave_by": {"type": "STRING", "nullable": true},
-                    "min_soc": {"type": "NUMBER", "nullable": true}
-                },
-                "required": ["priority", "leave_by", "min_soc"]
-            }
-        }
-    }
+MEDIUM - Standard requests with time constraints:
+  • Specific future times: "by 5 PM", "need it this evening", "before dinner"
+  • Moderate urgency: "would like to", "hoping to get", "need it by"
+  • Planning ahead: "have plans later", "going out tonight"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        for i in range(3): # Retry up to 3 times
-            try:
-                response = await client.post(apiUrl, json=payload, headers={"Content-Type": "application/json"})
-                
-                if response.status_code == 429 or response.status_code >= 500:
-                    wait_time = 2 ** i
-                    print(f"[GenAI] Rate limited. Retrying in {wait_time}s...")
-                    await asyncio.sleep(wait_time)
-                    continue
-                
-                response.raise_for_status()
-                
-                result = response.json()
-                json_text = result['candidates'][0]['content']['parts'][0]['text']
-                return json.loads(json_text)
+LOW - Flexible, non-urgent charging:
+  • Keywords: no rush, no hurry, whenever, flexible, leisurely
+  • Extended time: "all day", "all night", "here until tomorrow", "overnight"
+  • Casual tone: "just topping up", "might as well", "while I'm here"
 
-            except httpx.ReadTimeout:
-                print(f"[GenAI] Read timeout. Retrying...")
-                await asyncio.sleep(2 ** i)
-            except Exception as e:
-                print(f"[GenAI] ERROR: {e}")
-                raise e
+TIME EXTRACTION (24-hour format):
+  • "3 PM" / "3:00 PM" → "15:00"
+  • "noon" / "12 PM" → "12:00"
+  • "evening" → "18:00"
+  • "morning" → "08:00"
+  • "midnight" → "00:00"
+  • No time mentioned → null
+
+STATE OF CHARGE (SOC) EXTRACTION:
+  • "70%" / "70 percent" / "at least 70" → 70
+  • "full charge" / "100%" / "fully charged" → 100
+  • "80" / "eighty percent" → 80
+  • "half" / "50%" → 50
+  • No target mentioned → null
+
+CONTEXT AWARENESS:
+  • If current SoC is very low (<25%) and user says "full charge", treat as HIGH priority
+  • If current SoC is high (>75%) and no urgency mentioned, default to LOW
+  • Time + low battery = HIGH priority automatically
+
+EXAMPLES:
+Input: "User is at 85% SoC. User says: 'Just plugging in, here all day, no rush'"
+Output: {"priority": "low", "leave_by": null, "min_soc": null}
+
+Input: "User is at 20% SoC. User says: 'URGENT! Client meeting at 3 PM and I need at least 70%!'"
+Output: {"priority": "high", "leave_by": "15:00", "min_soc": 70}
+
+Input: "User is at 45% SoC. User says: 'Need it by evening, around 80% would be good'"
+Output: {"priority": "medium", "leave_by": "18:00", "min_soc": 80}
+
+Input: "User is at 15% SoC. User says: 'Need a full charge for my road trip'"
+Output: {"priority": "high", "leave_by": null, "min_soc": 100}"""
+ 
+    try:
+        # Use structured output with JSON schema for reliable parsing
+        response = await genai_client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{system_prompt}\n\nNow analyze:\n{user_text}",
+            config=GenerateContentConfig(
+                temperature=0.1,
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "priority": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"]
+                        },
+                        "leave_by": {
+                            "type": ["string", "null"],
+                            "description": "Time in 24-hour format (HH:MM) or null"
+                        },
+                        "min_soc": {
+                            "type": ["integer", "null"],
+                            "description": "Minimum state of charge percentage or null"
+                        }
+                    },
+                    "required": ["priority"]
+                }
+            ),
+        )
         
-        raise HTTPException(status_code=500, detail="GenAI service is unavailable or timing out.")
+        text = response.text.strip()
+        print(f"[GenAI] Raw response: {text}")
+        
+        # Parse the JSON response
+        parsed = json.loads(text)
+        
+        # Validate and clean the response
+        priority = parsed.get("priority", "medium").lower()
+        if priority not in ["low", "medium", "high"]:
+            priority = "medium"
+        
+        return {
+            "priority": priority,
+            "leave_by": parsed.get("leave_by"),
+            "min_soc": parsed.get("min_soc")
+        }
+        
+    except Exception as e:
+        print(f"[GenAI] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Smart fallback based on keywords
+        text_lower = user_text.lower()
+        if any(word in text_lower for word in ["panic", "urgent", "emergency", "asap", "meeting"]):
+            return {"priority": "high", "leave_by": None, "min_soc": None}
+        elif any(word in text_lower for word in ["no rush", "all day", "tomorrow"]):
+            return {"priority": "low", "leave_by": None, "min_soc": None}
+        return {"priority": "medium", "leave_by": None, "min_soc": None}
+    
 
 
-# --- Run the Server ---
+    
 if __name__ == "__main__":
     print("Starting ChargeFlex AI Orchestrator on http://0.0.0.0:8001")
     print("View dashboard at http://127.0.0.1:8001")
-    uvicorn.run(app, host="0.0.0.0", port=8001) # Use port 8001
+    uvicorn.run(app, host="0.0.0.0", port=8001)
