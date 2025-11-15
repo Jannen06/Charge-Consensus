@@ -5,8 +5,8 @@ import time
 import json
 
 # --- Configuration ---
-ORCHESTRATOR_URL = "http://127.0.0.1:8000"
-DENSO_API_HOST = "https://hackathon.dndappsdev.net" # From PDF
+ORCHESTRATOR_URL = "http://127.0.0.1:8001" # CHANGED
+DENSO_API_HOST = "https://hackathon.dndappsdev.net"
 
 # --- Denso API Simulation Functions ---
 
@@ -103,6 +103,11 @@ async def send_charge_request(did: str, text: str, presentation: dict):
     
     print(f"\n--- Simulating Driver: {did.split(':')[2]} ---")
     print(f"Sending text: '{text}'")
+
+    # --- THIS IS THE NEW DEBUG LINE ---
+    print(f"\n[Debug] Sending this JSON payload to {url}:")
+    print(json.dumps(payload, indent=2))
+    # --- END OF NEW DEBUG LINE ---
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
