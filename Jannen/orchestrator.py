@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 from fastapi import FastAPI, Request, HTTPException
 from starlette.responses import HTMLResponse
@@ -26,7 +29,12 @@ app = FastAPI(
 # --- Configuration & Global State ---
 DENSO_API_HOST = "https://hackathon1.didgateway.eu"
 # IMPORTANT: Replace with your actual Google AI API key
-genai_client = genai.Client(api_key=os.environ.get('GEMINI_API_KEY'))
+GEMINI_API_KEY_VALUE = os.environ.get('GEMINI_API_KEY')
+genai_client = genai.Client(api_key=GEMINI_API_KEY_VALUE)
+if not GEMINI_API_KEY_VALUE:
+    print("[ERROR] GEMINI_API_KEY not loaded. Please check your .env file or environment variables.")
+else:
+    print("[INFO] GEMINI_API_KEY successfully loaded.")
 
 GRID_IS_STRESSED = False
 CHARGE_REQUEST_QUEUE = []
@@ -126,11 +134,12 @@ async def handle_negotiation(request: UserNegotiateRequest):
         })
         print(f"[GenAI] ✓ Final Validated Plan: {genai_json}")
     except Exception as e:
+        print(f"[ERROR] GenAI call failed in handle_negotiation: {e}")
         raise HTTPException(status_code=500, detail=f"GenAI call failed: {e}")
     
     try:
         async with httpx.AsyncClient() as client:
-            await client.post("http://127.0.0.1:8001/api/charge_request", json=genai_json)
+            await client.post("http://127.0.0.1:8080/api/charge_request", json=genai_json)
         print(f"[Orchestrator] ✓ Request sent to internal queue.")
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Failed to forward request: {e}")

@@ -109,12 +109,12 @@
 
         async function setGridStatus(isStressed) {
             const endpoint = isStressed ? '/api/grid/stress' : '/api/grid/stabilize';
-            const orchestratorUrl = 'http://127.0.0.1:8001';
+            const orchestratorUrl = 'http://127.0.0.1:8080';
             try { await fetch(`${orchestratorUrl}${endpoint}`, { method: 'POST' }); fetchData(); } catch (error) { console.error('Failed to set grid status:', error); }
         }
 
         async function fetchData() {
-            const orchestratorUrl = 'http://127.0.0.1:8001';
+            const orchestratorUrl = 'http://127.0.0.1:8080';
             try {
                 const response = await fetch(`${orchestratorUrl}/api/status`);
                 if (!response.ok) throw new Error(`Network error: ${response.status}`);
@@ -143,7 +143,7 @@
                         queueDiv.appendChild(carDiv);
                     });
                 }
-            } catch (error) { console.error('Failed to fetch data:', error); document.getElementById('charging-queue').innerHTML = '<p style="color: #D32F2F;">Error: Could not connect to the orchestrator. Is it running at http://127.0.0.1:8001?</p>'; }
+            } catch (error) { console.error('Failed to fetch data:', error); document.getElementById('charging-queue').innerHTML = '<p style="color: #D32F2F;">Error: Could not connect to the orchestrator. Is it running at http://127.0.0.1:8080?</p>'; }
         }
         setInterval(fetchData, 2000); window.onload = fetchData;
     </script>

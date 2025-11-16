@@ -1,7 +1,7 @@
 import httpx
 import asyncio
 
-ORCHESTRATOR_URL = "http://127.0.0.1:8001"
+ORCHESTRATOR_URL = "http://127.0.0.1:8080"
 
 USERS = [
     {"user_did": "did:denso:user:sarah:456", "text": "I'M IN A PANIC! I'm at 3% and I have a client meeting at 3 PM. I need at least 70% charge!"},

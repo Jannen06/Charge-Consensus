@@ -8,18 +8,13 @@ import subprocess
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 # --- Configuration ---
-ORCHESTRATOR_URL = "http://127.0.0.1:8001"
+ORCHESTRATOR_URL = "http://127.0.0.1:8080"
 DEMO_SERVER_PORT = 8080
 
 # --- Global Counter for Live Demo Users ---
 live_demo_counter = 0
 
 # --- Helper Functions ---
-def run_web_server():
-    """Serves the dashboard.html file on a local port."""
-    server_address = ('', DEMO_SERVER_PORT)
-    httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
-    httpd.serve_forever()
 
 async def send_live_request(text: str):
     """Sends a single, dynamic request from the live demo."""
@@ -46,12 +41,10 @@ async def send_live_request(text: str):
 
 # --- Main Controller Logic ---
 async def main_controller():
-    server_thread = threading.Thread(target=run_web_server, daemon=True)
-    server_thread.start()
     print("--- Charge Consensus Demo Controller ---")
-    print(f"--- Dashboard server starting at http://localhost:{DEMO_SERVER_PORT}/dashboard.html ---")
+    print(f"--- Dashboard available at {ORCHESTRATOR_URL} ---")
     time.sleep(1)
-    webbrowser.open_new_tab(f"http://localhost:{DEMO_SERVER_PORT}/dashboard.html")
+    webbrowser.open_new_tab(ORCHESTRATOR_URL)
 
     while True:
         print("\n--- Demo Options ---")
