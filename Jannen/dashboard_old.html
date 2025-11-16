@@ -109,14 +109,12 @@
 
         async function setGridStatus(isStressed) {
             const endpoint = isStressed ? '/api/grid/stress' : '/api/grid/stabilize';
-            const orchestratorUrl = 'http://127.0.0.1:8001';
-            try { await fetch(`${orchestratorUrl}${endpoint}`, { method: 'POST' }); fetchData(); } catch (error) { console.error('Failed to set grid status:', error); }
+            try { await fetch(`http://127.0.0.1:8001${endpoint}`, { method: 'POST' }); fetchData(); } catch (error) { console.error('Failed to set grid status:', error); }
         }
 
         async function fetchData() {
-            const orchestratorUrl = 'http://127.0.0.1:8001';
             try {
-                const response = await fetch(`${orchestratorUrl}/api/status`);
+                const response = await fetch('http://127.0.0.1:8001/api/status');
                 if (!response.ok) throw new Error(`Network error: ${response.status}`);
                 const data = await response.json();
                 const queueDiv = document.getElementById('charging-queue'), queueCountSpan = document.getElementById('queue-count'), gridStatusDiv = document.getElementById('grid-status'), stabilizeBtn = document.getElementById('stabilize-btn'), stressBtn = document.getElementById('stress-btn');
@@ -133,7 +131,7 @@
                         queueDiv.appendChild(carDiv);
                     });
                 }
-            } catch (error) { console.error('Failed to fetch data:', error); document.getElementById('charging-queue').innerHTML = '<p style="color: #D32F2F;">Error: Could not connect to the orchestrator. Is it running at http://127.0.0.1:8001?</p>'; }
+            } catch (error) { console.error('Failed to fetch data:', error); document.getElementById('charging-queue').innerHTML = '<p style="color: #D32F2F;">Error loading data. Is the orchestrator script running?</p>'; }
         }
         setInterval(fetchData, 2000); window.onload = fetchData;
     </script>

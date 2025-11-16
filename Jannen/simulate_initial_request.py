@@ -172,7 +172,7 @@ async def main():
     sarah_presentation = await create_presentation("did:denso:user:sarah:67890", sarah_vc)
     await send_charge_request(
         "did:denso:user:sarah:67890",
-        "I'M IN A PANIC! I have a client meeting at 3 PM and I need at least 70%!",
+        "I'M IN A PANIC! My car is at 40% I have a client meeting at 3 PM and I need at least 70%!",
         sarah_presentation
     )
 
