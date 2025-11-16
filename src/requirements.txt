@@ -1,6 +1,17 @@
+# --- Core Web Server ---
 fastapi==0.111.0
 uvicorn==0.29.0
+
+# --- HTTP Client & Data Validation ---
 httpx==0.27.0
 pydantic==2.7.1
+
+# --- Google GenAI ---
 google-generativeai==0.7.0
+
+# --- Environment Variables ---
 python-dotenv==1.0.0
+
+# --- Speech Recognition for Demo Controller ---
+SpeechRecognition==3.10.4
+pyaudio==0.2.14 
