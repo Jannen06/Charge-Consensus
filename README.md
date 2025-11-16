@@ -123,20 +123,16 @@ python3 demo_controller.py
 
 ## 6. Project Structure
 
-/
-|-- presentation/ # Your pitch deck PDF
-|-- src/
-| |-- _deprecated/ # Old, unused files
-| |-- .env # For API keys (Secured way)
-| |-- .python-version # Python version file
-| |-- dashboard.html # The live dashboard UI
-| |-- demo_controller.py # The main script to run the demo
-| |-- orchestrator.py # The core FastAPI application and AI logic
-| |-- requirements.txt # Project dependencies
-| |-- simulate_demo.py # A helper script for the demo controller
-|-- README.md # This file
-
-
+├── presentation/
+│ └── video.mp4
+├── src/
+│ ├── .env
+│ ├── dashboard.html
+│ ├── demo_controller.py
+│ ├── orchestrator.py
+│ ├── requirements.txt
+│ └── simulate_demo.py
+└── README.md
 
 ## 7. Team
 
