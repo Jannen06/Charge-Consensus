@@ -1,0 +1,67 @@
+<svg width="554" height="280" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="background-color: rgb(255, 255, 255);">
+<defs>
+<style>
+/* CSS styles for the diagram */
+.node {
+    fill: #f9f9f9;
+    stroke: #333;
+    stroke-width: 2px;
+}
+.node .label {
+    font-family: 'Helvetica', 'Arial', sans-serif;
+    font-size: 14px;
+    fill: #333;
+}
+.edge {
+    stroke: #333;
+    stroke-width: 2px;
+    fill: none;
+}
+.arrowhead {
+    fill: #333;
+    stroke: none;
+}
+.subgraph {
+    fill: #f2f2f2;
+    stroke: #ccc;
+    stroke-width: 1px;
+    rx: 8px;
+    ry: 8px;
+}
+.subgraph-label {
+    font-family: 'Helvetica', 'Arial', sans-serif;
+    font-size: 16px;
+    font-weight: bold;
+    fill: #555;
+}
+</style>
+</defs>
+<rect class="subgraph" x="10" y="10" width="180" height="120" />
+<text class="subgraph-label" x="20" y="30">User</text>
+<rect class="node" x="20" y="50" width="160" height="60" rx="5" ry="5"/>
+<text class="label" x="30" y="70" dy="0em">Driver states need</text>
+<text class="label" x="30" y="70" dy="1.2em"><em>'I'm in a panic!'</em></text>
+
+<rect class="subgraph" x="220" y="10" width="324" height="260" />
+<text class="subgraph-label" x="230" y="30">Charge Consensus Platform</text>
+<circle class="node" cx="382" cy="80" r="40"/>
+<text class="label" x="382" y="75" text-anchor="middle" dy="0em"><b>Denso DID Agent</b></text>
+<text class="label" x="382" y="75" text-anchor="middle" dy="1.2em">Verifies Identity</text>
+
+<path class="node" d="M 322,170 l 60,-30 l 60,30 l -60,30 z" />
+<text class="label" x="382" y="165" text-anchor="middle" dy="0em"><b>GenAI Orchestrator</b></text>
+<text class="label" x="382" y="165" text-anchor="middle" dy="1.2em">Analyzes Request,</text>
+<text class="label" x="382" y="165" text-anchor="middle" dy="2.4em">Grid Status & History</text>
+
+<rect class="node" x="302" y="220" width="160" height="40" rx="5" ry="5"/>
+<text class="label" x="382" y="240" text-anchor="middle"><b>Live Dashboard</b><br/>Visualizes Queue</text>
+
+<path class="edge" d="M 180,80 L 342,80" />
+<path class="arrowhead" d="M 337,75 L 342,80 L 337,85 z" />
+
+<path class="edge" d="M 382,120 L 382,140" />
+<path class="arrowhead" d="M 377,135 L 382,140 L 387,135 z" />
+
+<path class="edge" d="M 382,200 L 382,220" />
+<path class="arrowhead" d="M 377,215 L 382,220 L 387,215 z" />
+</svg>
