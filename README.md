@@ -124,19 +124,23 @@ python3 demo_controller.py
 ## 6. Project Structure
 
 ├── presentation/
-│ └── video.mp4
+│ |── video.mp4
+
+
+
 ├── src/
 │ ├── .env
 │ ├── dashboard.html
 │ ├── demo_controller.py
 │ ├── orchestrator.py
 │ ├── requirements.txt
-│ └── simulate_demo.py
-└── README.md
+│ |── simulate_demo.py
+
+|── README.md
 
 ## 7. Team
 
-This project is created at Junction 2025 by:
+This project was created at Junction 2025 by:
 *   Jannen
 *   Al Shafi
 *   Nikhil
