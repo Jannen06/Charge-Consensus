@@ -8,8 +8,6 @@
   <img src="presentation/dashboard_demo.png" width="700" alt="Charge Consensus Dashboard">
 </p>
 
-*(Recommendation: Replace the Imgur link above with a real screenshot of your dashboard.)*
-
 ## 1. The Problem
 
 EV charging today is fundamentally "dumb." It's a first-come, first-served system that leads to three major problems:
@@ -28,8 +26,6 @@ Our system reimagines EV charging by transforming it from a simple utility into 
 <p align="center">
   <img src="presentation/architecture.jpeg" width="600" alt="Architecture Diagram">
 </p>
-
-*(Recommendation: Replace the Imgur link above with a real screenshot of the architecture diagram.)*
 
 1.  **Natural Language Request:** A driver states their need in plain English (e.g., "I'm in a panic!" or "I'll be here all day").
 2.  **DID-Based Verification (Simulated):** The driver's identity and vehicle data are verified using a Verifiable Credential (VC). This ensures a secure, trusted interaction without sharing unnecessary personal data.
