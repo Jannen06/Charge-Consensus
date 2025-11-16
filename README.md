@@ -5,7 +5,7 @@
 **Punchline:** Smart charging for a stressed grid.
 
 <p align="center">
-  <img src="https://i.imgur.com/your-dashboard-image.png" width="700" alt="Charge Consensus Dashboard">
+  <img src="presentation/dashboard_demo.png" width="700" alt="Charge Consensus Dashboard">
 </p>
 
 *(Recommendation: Replace the Imgur link above with a real screenshot of your dashboard.)*
@@ -26,7 +26,7 @@ Our system reimagines EV charging by transforming it from a simple utility into 
 ### How It Works
 
 <p align="center">
-  <img src="https://i.imgur.com/your-diagram-image.png" width="600" alt="Architecture Diagram">
+  <img src="presentation/architecture.jpeg" width="600" alt="Architecture Diagram">
 </p>
 
 *(Recommendation: Replace the Imgur link above with a real screenshot of the architecture diagram.)*
