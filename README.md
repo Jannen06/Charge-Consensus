@@ -122,12 +122,9 @@ python3 demo_controller.py
 6.  Press Enter and watch as a new "live-demo" driver instantly appears on the dashboard with a `HIGH` priority and `FAST CHARGE` plan. This demonstrates the system's ability to handle any dynamic, natural language request.
 
 ## 6. Project Structure
-
+```
 ├── presentation/
 │ |── video.mp4
-
-
-
 ├── src/
 │ ├── .env
 │ ├── dashboard.html
@@ -135,9 +132,8 @@ python3 demo_controller.py
 │ ├── orchestrator.py
 │ ├── requirements.txt
 │ |── simulate_demo.py
-
 |── README.md
-
+```
 ## 7. Team
 
 This project was created at Junction 2025 by:
